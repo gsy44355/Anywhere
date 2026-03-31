@@ -1185,9 +1185,23 @@ const handlePickFileStart = () => {
 watch(zoomLevel, (newZoom) => {
   if (window.api && typeof window.api.setZoomFactor === 'function') window.api.setZoomFactor(newZoom);
 });
-watch(chat_show, async () => {
-  await addCopyButtonsToCodeBlocks();
-}, { deep: true, flush: 'post' });
+// 使用 length 浅监听代替 deep watcher，避免每个 streaming token 触发全量 DOM 扫描
+let copyBtnDebounceTimer = null;
+const debouncedAddCopyButtons = () => {
+  if (copyBtnDebounceTimer) clearTimeout(copyBtnDebounceTimer);
+  copyBtnDebounceTimer = setTimeout(async () => {
+    await addCopyButtonsToCodeBlocks();
+    copyBtnDebounceTimer = null;
+  }, 500);
+};
+watch(() => chat_show.value.length, debouncedAddCopyButtons, { flush: 'post' });
+// 当 loading 从 true 变为 false（streaming 结束）时，立即注入 copy buttons
+watch(loading, (newVal, oldVal) => {
+  if (oldVal === true && newVal === false) {
+    if (copyBtnDebounceTimer) { clearTimeout(copyBtnDebounceTimer); copyBtnDebounceTimer = null; }
+    addCopyButtonsToCodeBlocks();
+  }
+});
 watch(() => currentConfig.value?.isDarkMode, (isDark) => {
   if (isDark) {
     document.documentElement.classList.add('dark');
@@ -1370,13 +1384,19 @@ onMounted(async () => {
   window.addEventListener('blur', handleWindowBlur);
   const chatMainElement = chatContainerRef.value?.$el;
   if (chatMainElement) {
+    let scrollRAF = null;
     chatObserver = new MutationObserver(() => {
-      // 只要处于粘滞状态，任何 DOM 变化（文字生成、元素高度变化）
-      // 都立即将 scrollTop 设为最大值。这在浏览器重绘前发生，因此视觉上是“内容上推”。
-      if (isSticky.value) {
-        chatMainElement.scrollTop = chatMainElement.scrollHeight;
+      // 使用 requestAnimationFrame 节流，将多次 DOM 变化合并为每帧最多一次滚动
+      if (isSticky.value && !scrollRAF) {
+        scrollRAF = requestAnimationFrame(() => {
+          chatMainElement.scrollTop = chatMainElement.scrollHeight;
+          scrollRAF = null;
+        });
       }
     });
+    // 在 onBeforeUnmount 中取消待执行的 rAF
+    const _cancelScrollRAF = () => { if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; } };
+    onBeforeUnmount(_cancelScrollRAF);
 
     // 监听子节点变化（新消息）和子树字符数据变化（打字机效果）
     chatObserver.observe(chatMainElement, {
@@ -1822,6 +1842,8 @@ const autoSaveSession = async (force = false) => {
 };
 
 onBeforeUnmount(async () => {
+  if (autoSaveInterval) { clearInterval(autoSaveInterval); autoSaveInterval = null; }
+  if (copyBtnDebounceTimer) { clearTimeout(copyBtnDebounceTimer); copyBtnDebounceTimer = null; }
   window.removeEventListener('wheel', handleWheel);
   window.removeEventListener('focus', handleWindowFocus);
   window.removeEventListener('blur', handleWindowBlur);

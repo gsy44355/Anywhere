@@ -917,7 +917,7 @@ async function refreshPromptsConfig() {
               </div>
             </div>
             <div class="prompt-description-container" @click="prepareEditPrompt(item.key, activeTabName)"
-              v-html="formatDescription(item.prompt)"></div>
+              v-text="formatDescription(item.prompt)"></div>
           </div>
         </div>
       </div>

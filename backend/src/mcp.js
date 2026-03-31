@@ -372,7 +372,7 @@ async function invokeMcpTool(toolName, toolArgs, signal, context = null) {
     // 连接外部传入的 signal
     if (signal) {
       if (signal.aborted) controller.abort();
-      signal.addEventListener('abort', () => controller.abort());
+      signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
 
     try {

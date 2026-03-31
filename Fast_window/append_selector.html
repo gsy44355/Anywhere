@@ -146,7 +146,13 @@
                         iconSrc = 'logo.png';
                     }
 
-                    div.innerHTML = `<img src="${iconSrc}" onerror="this.src='logo.png'"><span>${item.name}</span>`;
+                    const img = document.createElement('img');
+                    img.src = iconSrc;
+                    img.onerror = function() { this.src = 'logo.png'; };
+                    const span = document.createElement('span');
+                    span.textContent = item.name;
+                    div.appendChild(img);
+                    div.appendChild(span);
                     
                     div.onclick = () => {
                         window.api.forwardAppendMsg(item.senderId, activeType, activePayload);

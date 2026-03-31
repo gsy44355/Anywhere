@@ -20,6 +20,7 @@ const {
   broadcastEvent,
   exportMemoryData,
   importMemoryData,
+  backupConfig,
 } = require('./data.js');
 
 const {
@@ -301,6 +302,7 @@ window.api = {
   },
   exportMemoryData,
   importMemoryData,
+  backupConfig: (reason) => backupConfig(reason),
 };
 
 const commandHandlers = {
@@ -771,7 +773,7 @@ setInterval(async () => {
   } catch (e) {
     console.error("Task Scheduler Error:", e);
   }
-}, 1000); // 每秒轮询一次，保证精准执行
+}, 15000); // 每15秒轮询一次（任务调度最小粒度为1分钟，无需每秒检查）
 
 ipcRenderer.on('background-shell-request', async (e, { requestId, action, payload }) => {
   try {

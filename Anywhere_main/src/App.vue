@@ -11,6 +11,7 @@ import Skills from './components/Skills.vue'
 import { useI18n } from 'vue-i18n'
 import { Collection, Bell, Document } from '@element-plus/icons-vue'
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { ElBadge } from 'element-plus'; // 确保引入 ElBadge
 
 const { t, locale } = useI18n()
@@ -212,7 +213,7 @@ const fetchAndParseDoc = async (filename) => {
       return `![${alt}](${imgBaseUrl}${encodeURIComponent(imgFilename)})`;
     });
 
-    currentDocContent.value = marked.parse(text);
+    currentDocContent.value = DOMPurify.sanitize(marked.parse(text));
 
     // 等待 DOM 更新后，将滚动条回到顶部
     nextTick(() => {

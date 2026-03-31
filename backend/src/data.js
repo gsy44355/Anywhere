@@ -1724,8 +1724,30 @@ async function importMemoryData(memories) {
   }
 }
 
+async function backupConfig(reason = 'manual') {
+  try {
+    const configResult = await getConfig();
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      reason: reason,
+      config: configResult.config
+    };
+    const existing = utools.db.get('config_backup');
+    if (existing) {
+      utools.db.put({ _id: 'config_backup', _rev: existing._rev, data: backupData });
+    } else {
+      utools.db.put({ _id: 'config_backup', data: backupData });
+    }
+    return { success: true, timestamp: backupData.timestamp };
+  } catch (e) {
+    console.error('Config backup failed:', e);
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   getConfig,
+  backupConfig,
   checkConfig,
   updateConfig,
   saveSetting,

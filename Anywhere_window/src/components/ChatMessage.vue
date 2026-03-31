@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, nextTick } from 'vue';
+import { computed, ref, watch, onBeforeUnmount, nextTick } from 'vue';
 import { Bubble, Thinking, XMarkdown } from 'vue-element-plus-x';
 import { ElTooltip, ElButton, ElInput, ElCollapse, ElCollapseItem, ElIcon, ElCheckbox, ElTag, ElMessage } from 'element-plus';
 import { DocumentCopy, Refresh, Delete, Document, CaretTop, CaretBottom, Edit, Check, Close, CloseBold, Picture } from '@element-plus/icons-vue';
@@ -416,16 +416,19 @@ const handleEditKeyDown = (event) => {
   }
 };
 
-const renderedMarkdownContent = computed(() => {
+// 将 Markdown 渲染管线从 computed 改为防抖 ref，避免 streaming 期间每个 token 都重新计算
+const renderedMarkdownContent = ref('');
+let _mdRenderTimer = null;
+
+const _computeMarkdownContent = () => {
   const content = props.message.role ? props.message.content : props.message;
   const role = props.message.role ? props.message.role : 'user';
   let formattedContent = formatMessageContent(content, role);
   formattedContent = preprocessKatex(formattedContent);
 
   const protectedMap = new Map();
-  let placeholderIndex = 0;
   const addPlaceholder = (text) => {
-    const placeholder = `__PROTECTED_CONTENT_${placeholderIndex++}__`;
+    const placeholder = `__PC_${crypto.randomUUID()}__`;
     protectedMap.set(placeholder, text);
     return placeholder;
   };
@@ -441,23 +444,41 @@ const renderedMarkdownContent = computed(() => {
   // 2. 进行 HTML 清洗
   let sanitizedPart = DOMPurify.sanitize(processedContent, {
     ADD_TAGS: ['video', 'audio', 'source'],
-    USE_PROFILES: { html: true, svg: true, svgFilters: true },
-    ADD_ATTR: ['style']
+    USE_PROFILES: { html: true, svg: true, svgFilters: true }
   });
 
-  // 全局将 &gt; 恢复为 >
-  sanitizedPart = sanitizedPart.replace(/&gt;/g, '>');
-
   // 3. 恢复受保护的内容（代码块等）
-  let finalContent = sanitizedPart.replace(/__PROTECTED_CONTENT_\d+__/g, (placeholder) => {
+  let finalContent = sanitizedPart.replace(/__PC_[0-9a-f-]+__/g, (placeholder) => {
     return protectedMap.get(placeholder) || placeholder;
   });
 
-  // 匹配 <table...> 标签并包裹 div，利用正则确保只匹配实际的标签
+  // 匹配 <table...> 标签并包裹 div
   finalContent = finalContent.replace(/<table/g, '<div class="table-scroll-wrapper"><table').replace(/<\/table>/g, '</table></div>');
 
-  return finalContent || '';
+  renderedMarkdownContent.value = finalContent || '';
+};
+
+// Streaming 期间 150ms 防抖, 非 streaming 立即计算
+watch(() => props.message.content, () => {
+  const isActiveStreaming = props.isLoading && props.isLastMessage;
+  if (isActiveStreaming) {
+    if (_mdRenderTimer) clearTimeout(_mdRenderTimer);
+    _mdRenderTimer = setTimeout(() => { _computeMarkdownContent(); _mdRenderTimer = null; }, 150);
+  } else {
+    if (_mdRenderTimer) { clearTimeout(_mdRenderTimer); _mdRenderTimer = null; }
+    _computeMarkdownContent();
+  }
+}, { immediate: true, deep: true });
+
+// Streaming 结束时立即做最终渲染
+watch(() => props.isLoading, (newVal, oldVal) => {
+  if (oldVal === true && newVal === false && props.isLastMessage) {
+    if (_mdRenderTimer) { clearTimeout(_mdRenderTimer); _mdRenderTimer = null; }
+    _computeMarkdownContent();
+  }
 });
+
+onBeforeUnmount(() => { if (_mdRenderTimer) { clearTimeout(_mdRenderTimer); _mdRenderTimer = null; } });
 
 const hasContentToShow = computed(() => {
   const hasText = renderedMarkdownContent.value && renderedMarkdownContent.value.trim().length > 0;

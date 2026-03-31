@@ -208,8 +208,8 @@ export default class TextSearchUI {
     this.btnNext.addEventListener('click', () => this.findNext());
     this.btnClose.addEventListener('click', () => this.hide());
 
-    // 全局快捷键
-    document.addEventListener('keydown', (e) => {
+    // 全局快捷键 — 保存引用以便 destroy 时移除
+    this._handleDocKeydown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
         this.show();
@@ -218,7 +218,8 @@ export default class TextSearchUI {
         e.preventDefault();
         this.hide();
       }
-    });
+    };
+    document.addEventListener('keydown', this._handleDocKeydown);
 
     // 窗口大小改变时，确保搜索框不跑出去
     window.addEventListener('resize', this._handleResize);
@@ -241,35 +242,34 @@ export default class TextSearchUI {
       this.container.style.width = rect.width + 'px'; 
     });
 
-    document.addEventListener('mousemove', (e) => {
+    this._handleDocMousemove = (e) => {
       if (!isDragging) return;
       e.preventDefault();
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
-      
+
       let newLeft = initialLeft + dx;
       let newTop = initialTop + dy;
 
-      // [关键修改] 边界限制计算
       const winWidth = window.innerWidth;
       const winHeight = window.innerHeight;
       const boxRect = this.container.getBoundingClientRect();
-      
-      // 限制 X 轴：0 <= Left <= 窗口宽度 - 盒子宽度
+
       if (newLeft < 0) newLeft = 0;
       else if (newLeft + boxRect.width > winWidth) newLeft = winWidth - boxRect.width;
 
-      // 限制 Y 轴：0 <= Top <= 窗口高度 - 盒子高度
       if (newTop < 0) newTop = 0;
       else if (newTop + boxRect.height > winHeight) newTop = winHeight - boxRect.height;
 
       this.container.style.left = `${newLeft}px`;
       this.container.style.top = `${newTop}px`;
-    });
+    };
+    document.addEventListener('mousemove', this._handleDocMousemove);
 
-    document.addEventListener('mouseup', () => {
+    this._handleDocMouseup = () => {
       isDragging = false;
-    });
+    };
+    document.addEventListener('mouseup', this._handleDocMouseup);
   }
 
   // [新增] 确保搜索框在窗口可见区域内
@@ -461,6 +461,10 @@ export default class TextSearchUI {
   }
   
   destroy() {
+      this.clear();
+      document.removeEventListener('keydown', this._handleDocKeydown);
+      document.removeEventListener('mousemove', this._handleDocMousemove);
+      document.removeEventListener('mouseup', this._handleDocMouseup);
       window.removeEventListener('resize', this._handleResize);
       if(this.container) {
           this.container.remove();

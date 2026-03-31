@@ -2052,7 +2052,13 @@ $PSDefaultParameterValues['*:Encoding'] = 'utf8';
                     child.stderr.on('data', (data) => appendBgLog(shellId, data.toString()));
                     child.on('close', (code) => {
                         const proc = backgroundShells.get(shellId);
-                        if (proc) proc.active = false;
+                        if (proc) {
+                            proc.active = false;
+                            proc.process = null; // 释放 ChildProcess 引用
+                            proc.cleanupTimer = setTimeout(() => {
+                                backgroundShells.delete(shellId);
+                            }, 5 * 60 * 1000); // 5 分钟后自动清理
+                        }
                         cleanupTempFile();
                     });
                     resolve(`Background process started successfully.\nID: ${shellId}\nUse 'read_background_shell_output' to view logs.`);
@@ -2203,6 +2209,7 @@ $PSDefaultParameterValues['*:Encoding'] = 'utf8';
         if (!proc) return `Error: Shell ID '${shell_id}' not found.`;
 
         if (!proc.active) {
+            if (proc.cleanupTimer) clearTimeout(proc.cleanupTimer);
             backgroundShells.delete(shell_id);
             return `Process '${shell_id}' was already exited. Removed from history.`;
         }

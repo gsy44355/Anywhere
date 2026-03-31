@@ -170,6 +170,25 @@ async function handleGlobalToggleChange(key, value) {
 async function exportConfig() {
   if (!currentConfig.value) return;
   try {
+    // 询问是否包含完整 API Key
+    let includeFullKeys = false;
+    try {
+      await ElMessageBox.confirm(
+        t('setting.alerts.exportKeyConfirm') || '导出文件中的 API Key 将被脱敏处理（仅显示末4位）。\n是否包含完整 API Key？',
+        t('setting.alerts.exportTitle') || '导出配置',
+        {
+          confirmButtonText: t('setting.alerts.exportWithKeys') || '包含完整Key',
+          cancelButtonText: t('setting.alerts.exportMasked') || '脱敏导出（推荐）',
+          type: 'warning',
+          distinguishCancelAndClose: true
+        }
+      );
+      includeFullKeys = true;
+    } catch (action) {
+      if (action === 'close') return; // 关闭对话框则取消导出
+      includeFullKeys = false; // cancel = 脱敏导出
+    }
+
     const configToExport = JSON.parse(JSON.stringify(currentConfig.value));
 
     if (configToExport.webdav && configToExport.webdav.localChatPath) {
@@ -178,6 +197,31 @@ async function exportConfig() {
 
     if (configToExport.skillPath !== undefined) {
       delete configToExport.skillPath;
+    }
+
+    // 脱敏 API Key 和 WebDAV 密码
+    if (!includeFullKeys) {
+      if (configToExport.providers) {
+        Object.values(configToExport.providers).forEach(provider => {
+          if (provider && typeof provider === 'object') {
+            // 处理文件夹内的 provider
+            if (provider.isFolder && provider.children) {
+              Object.values(provider.children).forEach(child => {
+                if (child && child.api_key) {
+                  const key = child.api_key;
+                  child.api_key = key.length > 4 ? '****' + key.slice(-4) : '****';
+                }
+              });
+            } else if (provider.api_key) {
+              const key = provider.api_key;
+              provider.api_key = key.length > 4 ? '****' + key.slice(-4) : '****';
+            }
+          }
+        });
+      }
+      if (configToExport.webdav && configToExport.webdav.password) {
+        configToExport.webdav.password = '****';
+      }
     }
 
     if (window.api && window.api.exportMemoryData) {
@@ -212,13 +256,25 @@ function importConfig() {
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
-          const currentLocalChatPath = currentConfig.value.webdav?.localChatPath;
-          const currentSkillPath = currentConfig.value.skillPath;
-
           const importedData = JSON.parse(e.target.result);
           if (typeof importedData !== 'object' || importedData === null) {
             throw new Error("Imported file is not a valid configuration object.");
           }
+
+          // 导入前确认
+          await ElMessageBox.confirm(
+            t('setting.alerts.importConfirm') || '导入将覆盖当前配置，是否继续？',
+            t('common.warningTitle') || '警告',
+            { confirmButtonText: t('common.confirm') || '确认', cancelButtonText: t('common.cancel') || '取消', type: 'warning' }
+          );
+
+          // 导入前自动备份当前配置
+          if (window.api && window.api.backupConfig) {
+            await window.api.backupConfig('import');
+          }
+
+          const currentLocalChatPath = currentConfig.value.webdav?.localChatPath;
+          const currentSkillPath = currentConfig.value.skillPath;
 
           if (currentLocalChatPath) {
             if (!importedData.webdav) {
@@ -246,6 +302,7 @@ function importConfig() {
           }
           ElMessage.success(t('setting.alerts.importSuccess'));
         } catch (err) {
+          if (err === 'cancel' || err === 'close') return;
           console.error("Error importing configuration:", err);
           ElMessage.error(t('setting.alerts.importFailed'));
         }
@@ -496,6 +553,11 @@ async function restoreFromWebdav(file) {
     );
 
     ElMessage.info(t('setting.webdav.alerts.restoreInProgress'));
+
+    // 恢复前自动备份当前配置
+    if (window.api && window.api.backupConfig) {
+      await window.api.backupConfig('webdav_restore');
+    }
 
     const currentLocalChatPath = currentConfig.value.webdav?.localChatPath;
     const currentSkillPath = currentConfig.value.skillPath;
